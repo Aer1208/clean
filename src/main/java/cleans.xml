@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cleans>
+  <clean id="trim" class="com.ftoul.bi.clean.impl.TrimClean"/>
+</cleans>
