@@ -8,17 +8,6 @@ package com.ftoul.bi.clean.util;
 public class Constant {
 
 	/*
-	 * 以下常量用于合并蜂投用户
-	 */
-	public final static String SSO_USERS="sso_users";
-	public final static String SSO_USER_INFO="sso_user_info";
-	public final static String P2P_USER_INFO="p2p_user_info";
-	public final static String P2P_HXUSER_ACCOUNT="p2p_hxuser_account";
-	public final static String P2P_HUIFU_BALANCE="p2p_huifu_balance";
-	public final static String P2P_BORROWER="p2p_borrower";
-	public final static String T_BORROWER="t_borrower";
-	
-	/*
 	 * 以下常量用于解析xml配置文件 
 	 */
 	public final static String COLUMN_NAM = "column";
