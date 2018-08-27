@@ -28,6 +28,7 @@ public class Constant {
 	public static final String SEPSTR = "sepStr";
 	public static final String FIELDCNT = "fieldCnt";
 	public static final String FIELD_STR = "\001";
+	public static final String TYPE = "type";
 	
 	
 }

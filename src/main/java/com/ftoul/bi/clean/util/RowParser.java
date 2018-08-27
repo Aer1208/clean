@@ -35,6 +35,11 @@ public class RowParser {
 	private int fieldCnt=0; 
 	
 	/**
+	 * 清洗类型 COL按照字段清洗，FIX: 按照定长文件格式清洗
+	 */
+	private String type = "COL";
+	
+	/**
 	 * 解析的配置文件
 	 */
 	private String xmlFile;
@@ -60,14 +65,38 @@ public class RowParser {
 		initParam();
 	}
 	
+	/**
+	 * 初始化根节点的其他属性
+	 * @throws Exception
+	 */
 	private void initParam() throws Exception {
-		if(rootElement.hasAttribute(Constant.SEPSTR)) {
-			sepStr = rootElement.getAttribute(Constant.SEPSTR);
-		}
+		sepStr = getAttributeByRoot(Constant.SEPSTR,"\001");
+		type=getAttributeByRoot(Constant.TYPE,"COL");
 		if (rootElement.hasAttribute(Constant.FIELDCNT)) {
 			fieldCnt = Integer.parseInt(rootElement.getAttribute(Constant.FIELDCNT));
 		} else {
 			throw new Exception("not found attribute:" + Constant.FIELDCNT);
+		}
+	}
+	
+	/**
+	 * 根据属性名获取根节点的属性值
+	 * @param name
+	 * @param defaultValue 默认值
+	 * @return
+	 */
+	public String getAttributeByRoot(String name, String defaultValue) {
+		if (rootElement.hasAttribute(name)) {
+			return rootElement.getAttribute(name);
+		}
+		return defaultValue;
+	}
+	
+	public String parseRow(String row) throws Exception {
+		if ("FIX".equalsIgnoreCase(type)) {
+			return parseFixedRows(row);
+		} else {
+			return parseColRow(row);
 		}
 	}
 
@@ -78,7 +107,7 @@ public class RowParser {
 	 *            需要解析的行
 	 * @return <code>String<code>
 	 */
-	public String parseRow(String row) {
+	public String parseColRow(String row) {
 		String[] cols = row.split(sepStr, fieldCnt);
 		StringBuffer sb = new StringBuffer();
 
@@ -90,50 +119,90 @@ public class RowParser {
 			if ("bit".equals(type)) {
 				sb.append(cols[index-1].equals("true")?1:0);
 			} else {
-				IClean clean = null;
-				if (n.hasAttribute("clean")) {
-					// 如果有定义clean属性，则根据clean属性找到清洗程序来处理
-					clean = CleanMap.get(n.getAttribute("clean"));
-					if (n.hasAttribute("params") && clean != null) {
-						String attr = n.getAttribute("params");
-						if (attr != null && !"".equals(attr)) {
-							String[] attrs = attr.split(";");
-							for (String attrPair : attrs) {
-								Matcher matcher = Pattern.compile("([^=]+)=([^=]+)").matcher(attrPair);
-								if (matcher.matches()) {
-									// 如果属性对是以 attr=value形式定义，则认为有效，为清洗对象增加该属性
-									String properties = matcher.group(1);
-									String value = matcher.group(2);
-									try {
-										Class<?> clazz = clean.getClass();
-										Field field = clazz.getDeclaredField(properties);
-										field.setAccessible(true);
-										field.set(clean, value);
-									} catch (NoSuchFieldException e) {
-									} catch (SecurityException e) {
-									} catch (IllegalArgumentException e) {
-									} catch (IllegalAccessException e) {
-									}
-									
-								}
-							}
-						}
-					}
-				}
-				
-				if (clean == null) {
-					clean = new TrimClean();
-				}
+				IClean clean = getClean(n);
 				
 				sb.append(clean.clean(cols[index-1]));
 			}
 			sb.append(sepStr);
 		}
 		if (sb.toString().endsWith(sepStr)) {
-			return sb.substring(0, sb.length() - 1);
+			return sb.substring(0, sb.length() - sepStr.length());
 		}
 		return sb.toString();
 
+	}
+	
+	/**
+	 * 清洗每列固定长度的数据源，固定长度的开始位置和结束位置定义在index属性中
+	 * @param row 需要解析的行
+	 * @return <code>String<code>
+	 */
+	public String parseFixedRows(String row) {
+		StringBuffer sb = new StringBuffer();
+
+		NodeList nodes = rootElement.getElementsByTagName(Constant.COLUMN_NAM);
+		for (int ind = 0; ind < nodes.getLength(); ind++) {
+			Element n = (Element) nodes.item(ind);
+			String indexDesc = n.getAttribute(Constant.INDEX_ATTR_NAM);
+			String[] indexs = indexDesc.split("-|,");
+			if (indexs!= null && indexs.length == 2) {
+				int begin = Integer.parseInt(indexs[0]);
+				int end = Integer.parseInt(indexs[1]);
+				if (end <= row.length()) {
+					end = row.length();
+				}
+				String sourceValue = row.substring(begin, end);
+				IClean clean = getClean(n);
+				sb.append(clean.clean(sourceValue));
+				
+			}
+		}
+		if (sb.toString().endsWith(sepStr)) {
+			return sb.substring(0, sb.length() - sepStr.length());
+		}
+		return sb.toString();
+	}
+	
+	/**
+	 * 根据清洗规则节点获取清洗对象
+	 * @param element
+	 * @return
+	 */
+	private IClean getClean(Element element) {
+		IClean clean = null;
+		if (element.hasAttribute("clean")) {
+			// 如果有定义clean属性，则根据clean属性找到清洗程序来处理
+			clean = CleanMap.get(element.getAttribute("clean"));
+			if (element.hasAttribute("params") && clean != null) {
+				String attr = element.getAttribute("params");
+				if (attr != null && !"".equals(attr)) {
+					String[] attrs = attr.split(";");
+					for (String attrPair : attrs) {
+						Matcher matcher = Pattern.compile("([^=]+)=([^=]+)").matcher(attrPair);
+						if (matcher.matches()) {
+							// 如果属性对是以 attr=value形式定义，则认为有效，为清洗对象增加该属性
+							String properties = matcher.group(1);
+							String value = matcher.group(2);
+							try {
+								Class<?> clazz = clean.getClass();
+								Field field = clazz.getDeclaredField(properties);
+								field.setAccessible(true);
+								field.set(clean, value);
+							} catch (NoSuchFieldException e) {
+							} catch (SecurityException e) {
+							} catch (IllegalArgumentException e) {
+							} catch (IllegalAccessException e) {
+							}
+							
+						}
+					}
+				}
+			}
+		}
+		if (clean == null) {
+			clean = new TrimClean();
+		}
+		return clean;
 	}
 
 }

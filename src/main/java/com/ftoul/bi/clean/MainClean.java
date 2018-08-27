@@ -53,9 +53,19 @@ public class MainClean extends Configured implements Tool{
 		protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
 
 			String line = value.toString();
-
-			String repay = rowParser.parseRow(line);
-			context.write(new Text(repay.toString()), NullWritable.get());
+			context.getCounter("Clean", "TotCnt").increment(1);
+			try {
+				String repay = rowParser.parseRow(line);
+				if (repay == null || "".equals(repay)) {
+					context.getCounter("Clean", "ErrorCnt").increment(1);
+				} else {
+					context.write(new Text(repay.toString()), NullWritable.get());
+				}
+			} catch (Exception e) {
+				context.getCounter("Clean", "ErrorCnt").increment(1);
+				e.printStackTrace();
+			}
+			
 		}
 	}
 	
@@ -63,7 +73,7 @@ public class MainClean extends Configured implements Tool{
 		
 		
 		if (args == null || args.length < 3) {
-			log.info("Usage:ReduceJoinBorrower <xmlFile> <input...> <output>");
+			log.info("Usage:hadoop clean-1.0.0.jar com.ftoul.bi.clean.MainClean <xmlFile> <input...> <output>");
 			System.exit(1);
 		}
 		
@@ -107,6 +117,26 @@ public class MainClean extends Configured implements Tool{
 		job.setJarByClass(MainClean.class);
 
 		boolean success = job.waitForCompletion(true);
-		return success ?1 :0;
+		
+		if (success) {
+			// 数据质量控制处理
+			RowParser rowParser = new RowParser(xmlFile);
+			float allowErrRat = 0.001f;
+			try {
+				allowErrRat = Float.parseFloat(rowParser.getAttributeByRoot("allErrRat","0.001f"));
+			} catch (Exception e) {
+				allowErrRat = 0.001f;
+			}
+			
+			long errCnt = job.getCounters().getGroup("Clean").findCounter("ErrorCnt").getValue();
+			long totCnt = job.getCounters().getGroup("Clean").findCounter("TotCnt").getValue();
+			if (errCnt > totCnt * allowErrRat) {
+				log.info("The total number of entries is " + totCnt + ", and the number of rejected records is " + errCnt + ", exceeding the allowed error record("+allowErrRat * 100+"%)");
+				return 2;
+			}
+			return 0;
+		} else {
+			return 1;
+		}
 	}
 }
